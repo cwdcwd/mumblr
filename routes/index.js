@@ -8,6 +8,9 @@ var crypto = require('crypto')
 let qs = require('querystring');
 let requestPromise = require('request-promise');
 
+var scrypt = require("scrypt");
+var scryptParameters = scrypt.paramsSync(0.1);
+
 /* GET home page. */
 router.get('/', function(req, res, next) {
     let url = config.KB_BASEURL + 'getsalt.json';
@@ -26,36 +29,53 @@ router.get('/', function(req, res, next) {
     };
 
     requestPromise(opts).then(function(kbRes) {
-        //res.json(kbRes);
         let url = config.KB_BASEURL + 'login.json';
-        var decodedSessionToken = new Buffer(kbRes.login_session, 'base64').toString('utf8');
+        let decodedSessionToken = new Buffer(kbRes.login_session, 'base64').toString('utf8');
+        let salt = kbRes.salt;
 
-        let hash = crypto.createHmac('sha512', decodedSessionToken).update(password, 'utf8').digest(
-            'hex');
-        console.log(kbRes.login_session, decodedSessionToken);
-        console.log(hash);
+        scrypt.hash(new Buffer(password), {
+            N: Math.pow(2, 15),
+            r: 8,
+            p: 1
+        }, 224, salt, function(err, obj) {
+            if (err) {
+                console.log(err);
+                res.status(500).json(err)
+            } else {
+                let pwh = obj.toString('hex')[192: 224];
+                let hmac_pwh = crypto.createHmac('sha512', decodedSessionToken).update(pwh,
+                    'utf8').digest(
+                    'hex');
 
-        let opts = {
-            method: 'POST',
-            uri: url,
-            headers: {
-                'Accept': 'application/json',
-                'X-CSRF-Token': kbRes.csrf_token
-            },
-            form: {
-                email_or_username: username,
-                hmac_pwh: hash,
-                login_session: kbRes.login_session
+                console.log('login_session', kbRes.login_session);
+                console.log('decodedSessionToken', decodedSessionToken);
+                console.log('hmac_pwh', hmac_pwh);
+
+                let opts = {
+                    method: 'POST',
+                    uri: url,
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-CSRF-Token': kbRes.csrf_token
+                    },
+                    form: {
+                        email_or_username: username,
+                        hmac_pwh: hmac_pwh,
+                        login_session: kbRes.login_session
+                    }
+                };
+
+                requestPromise(opts).then(function(kbLoginRes) {
+                    let kbLog = JSON.parse(kbLoginRes);
+                    res.json(kbLog);
+                }).catch(function(err) {
+                    console.log(err);
+                    res.status(500).json(err);
+                });
             }
-        };
 
-        requestPromise(opts).then(function(kbLoginRes) {
-            let kbLog = JSON.parse(kbLoginRes);
-            res.json(kbLog);
-        }).catch(function(err) {
-            console.log(err);
-            res.status(500).json(err);
         });
+
     }).catch(function(err) {
         console.log(err);
         res.status(500).json(err);
