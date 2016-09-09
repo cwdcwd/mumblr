@@ -42,11 +42,12 @@ router.get('/', function(req, res, next) {
                 console.log(err);
                 res.status(500).json(err)
             } else {
-                let pwh = obj.toString('hex')[192: 224];
+                let pwh = obj; //obj.toString('hex').substring(192, 224);
                 let hmac_pwh = crypto.createHmac('sha512', decodedSessionToken).update(pwh,
                     'utf8').digest(
                     'hex');
 
+                console.log('salt', salt);
                 console.log('login_session', kbRes.login_session);
                 console.log('decodedSessionToken', decodedSessionToken);
                 console.log('hmac_pwh', hmac_pwh);
